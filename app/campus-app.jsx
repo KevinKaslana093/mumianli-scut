@@ -52,6 +52,7 @@ import {
   forDay,
   onDate,
   times,
+  hasTimes,
   conflicts,
   parseWeeks,
   formatWeeks,
@@ -390,6 +391,7 @@ export default function CampusApp() {
     return true;
   };
   const visibleDays = Array.from({ length: 7 }, (_, i) => i + 1),
+    periodCount = Math.max(11, ...s.courses.map((c) => c.end)),
     weekCourses = visibleDays.flatMap((d) => forDay(s, week, d)),
     filtered = weekCourses.filter(
       (c) => campus === "all" || c.campus === campus,
@@ -940,7 +942,7 @@ export default function CampusApp() {
                         </div>
                         <div className="grid-body">
                           <div className="time-axis">
-                            {SLOTS.university.map((slot, i) => (
+                            {Array.from({ length: periodCount }, (_, i) => (
                               <div
                                 key={i}
                                 className={
@@ -950,9 +952,9 @@ export default function CampusApp() {
                                 <b>{String(i + 1).padStart(2, "0")}</b>
                                 {campus !== "all" && (
                                   <small>
-                                    {SLOTS[campus][i].slice(0, 5)}
+                                    {SLOTS[campus][i]?.slice(0, 5) || "待确认"}
                                     <br />
-                                    {SLOTS[campus][i].slice(6)}
+                                    {SLOTS[campus][i]?.slice(6) || ""}
                                   </small>
                                 )}
                                 {campus === "all" && (
@@ -965,7 +967,7 @@ export default function CampusApp() {
                           </div>
                           {visibleDays.map((d) => (
                             <div className="day-column" key={d}>
-                              {Array.from({ length: 11 }, (_, i) => (
+                              {Array.from({ length: periodCount }, (_, i) => (
                                 <button
                                   className={
                                     "empty-cell " +
@@ -977,7 +979,7 @@ export default function CampusApp() {
                                     open("course", {
                                       day: d,
                                       start: i + 1,
-                                      end: Math.min(11, i + 2),
+                                      end: Math.min(periodCount, i + 2),
                                       campus:
                                         campus === "all"
                                           ? "university"
@@ -1092,7 +1094,7 @@ export default function CampusApp() {
                           {CAMPUSES[next.campus]} · {next.room || "教室待定"}
                         </p>
                         <span className="next-status">
-                          {times(next).from <= nowTime
+                          {!hasTimes(next) ? "具体时间待确认" : times(next).from <= nowTime
                             ? "正在上课"
                             : "今天稍后"}
                         </span>
@@ -1164,6 +1166,9 @@ export default function CampusApp() {
                   </section>
                 </aside>
               </div>
+              {s.courses.some((c) => !hasTimes(c)) && (
+                <div className="conflict-box"><Info size={18} /><p>课表包含超出 11 节预设的课程，已按原节次保留。请点击课程填写实际时间，确认后即可导出系统日历。</p></div>
+              )}
               {conflictList.length > 0 && (
                 <div className="conflict-box">
                   <Info size={18} />
@@ -1189,7 +1194,7 @@ export default function CampusApp() {
                   .map((c, i) => ({ a: list[i], b: c }))
                   .filter(
                     ({ a, b }) =>
-                      a.campus !== b.campus && times(a).to <= times(b).from,
+                      hasTimes(a) && hasTimes(b) && a.campus !== b.campus && times(a).to <= times(b).from,
                   );
                 return changes.map(({ a, b }, i) => (
                   <div className="travel-note" key={d + "-" + i}>
@@ -1509,7 +1514,7 @@ export default function CampusApp() {
               <div className="form-row">
                 <Field label="开始节次">
                   <select name="start" defaultValue={modal.item?.start || 1}>
-                    {SLOTS.wushan.map((_, i) => (
+                    {Array.from({ length: 16 }, (_, i) => (
                       <option key={i} value={i + 1}>
                         第 {i + 1} 节
                       </option>
@@ -1518,12 +1523,20 @@ export default function CampusApp() {
                 </Field>
                 <Field label="结束节次">
                   <select name="end" defaultValue={modal.item?.end || 2}>
-                    {SLOTS.wushan.map((_, i) => (
+                    {Array.from({ length: 16 }, (_, i) => (
                       <option key={i} value={i + 1}>
                         第 {i + 1} 节
                       </option>
                     ))}
                   </select>
+                </Field>
+              </div>
+              <div className="form-row">
+                <Field label="实际开始时间" hint="选填；留空使用校区预设。">
+                  <input type="time" name="timeFrom" defaultValue={modal.item?.timeFrom || ""} />
+                </Field>
+                <Field label="实际结束时间" hint="第 12–16 节需手动确认时间，填写后可导出日历。">
+                  <input type="time" name="timeTo" defaultValue={modal.item?.timeTo || ""} />
                 </Field>
               </div>
               <Field
@@ -1673,8 +1686,8 @@ export default function CampusApp() {
                 </Field>
               </div>
               <p className="form-intro">
-                每门课分别使用所属校区的完整 11
-                节作息。网页关闭后的提醒，请使用导出到系统日历。
+                每门课使用所属校区的作息。支持第 12–16 节课程，超出预设的时间请在课程编辑中填写。
+                网页关闭后的提醒，请使用导出到系统日历。
               </p>
               <div className="form-actions">
                 <button className="primary" disabled={busy}>
@@ -1809,6 +1822,9 @@ export default function CampusApp() {
                   <p>
                     逐项核对课程、周次和校区；确认后会替换本机当前课表，请先导出旧课表备份。
                   </p>
+                  {preview.courses.some((c) => !hasTimes(c)) && (
+                    <p className="form-intro">已保留超出 11 节预设的课程。具体时间待确认，请保存后编辑课程填写实际时间；确认前暂不能导出系统日历。</p>
+                  )}
                   <div className="preview-list">
                     {preview.courses.map((c, i) => (
                       <div key={i}>

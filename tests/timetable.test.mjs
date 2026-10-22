@@ -12,6 +12,8 @@ import {
   conflicts,
   times,
   SLOTS,
+  hasTimes,
+  parseScutPages,
 } from "../lib/timetable.js";
 test("three campuses preserve exact first, afternoon and evening slots", () => {
   assert.equal(SLOTS.wushan.length, 11);
@@ -119,8 +121,40 @@ test("invalid calendar and period limits are rejected without mutating original"
   const s = newSchedule();
   assert.throws(() => validate({ ...s, startDate: "2026-09-08" }));
   assert.throws(() =>
-    normalize({ name: "非法节次", day: 1, start: 10, end: 12, weeks: "1" }),
+    normalize({ name: "非法节次", day: 1, start: 10, end: 17, weeks: "1" }),
   );
   assert.throws(() => validate({ ...s, adjustments: { "2026-02-30": null } }));
   assert.equal(s.courses.length, 0);
+});
+test("extended periods survive import and require confirmed times for calendar export", () => {
+  const c = normalize({name:"跨页晚课",day:1,start:9,end:12,weeks:"1",campus:"university"});
+  assert.equal(c.end,12);
+  assert.equal(times(c).to,"待确认");
+  assert.equal(hasTimes(c),false);
+  const s={...newSchedule(),startDate:"2026-09-07",courses:[c]};
+  assert.equal(validate(s).courses[0].end,12);
+  assert.throws(()=>exportICS(s),/时间待确认/);
+  const confirmed=normalize({...c,timeTo:"22:20"});
+  assert.equal(hasTimes(confirmed),true);
+  assert.match(exportICS({...s,courses:[confirmed]}),/DTEND:20260907T142000Z/);
+  const restored=parseCSV(exportCSV({...s,courses:[confirmed]}),"wushan")[0];
+  assert.equal(restored.timeTo,"22:20");
+  assert.equal(restored.campus,"university");
+  assert.throws(()=>normalize({...c,timeTo:"18:00"}),/结束时间/);
+  assert.throws(()=>normalize({...c,timeTo:"25:00"}),/HH:mm/);
+});
+test("SCUT PDF parser preserves course continuation, twelfth period and explicit campus", () => {
+  const item=(str,x,y)=>({str,x,y,width:20});
+  const headers=[..."一二三四五六日"].map((d,i)=>item("星期"+d,100+i*100,20));
+  const pages=[
+    {height:800,items:[...headers,item("测试课程(9-11节)4-5周/校区:大学城校区/场地:测试教室/教师:",100,50)]},
+    {height:800,items:[item("测试教师/学分:1.0(9-12节)9周/校区:大学城校区/场地:测试教室/教师:测试教师/学分:1.0",100,30),item("实践课程：测试实践",100,700)]},
+  ];
+  const {courses}=parseScutPages(pages);
+  assert.equal(courses.length,2);
+  assert.equal(courses[1].name,"测试课程");
+  assert.equal(courses[1].end,12);
+  assert.deepEqual(courses[1].weeks,[9]);
+  assert.equal(normalize(courses[1],"wushan").campus,"university");
+  assert.equal(courses[0].teacher,"测试教师");
 });
