@@ -226,6 +226,11 @@ function CampusArt() {
   );
 }
 export default function CampusApp() {
+  const [, refreshClock] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => refreshClock(value => value + 1), 60000);
+    return () => clearInterval(timer);
+  }, []);
   const [view, setView] = useState("timetable"),
     [schedule, setSchedule] = useState(newSchedule),
     [demo, setDemo] = useState(false),
